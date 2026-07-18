@@ -1,26 +1,95 @@
 @import "tailwindcss";
 
+/* ---------- telemetryZero design system: dark mission-control ---------- */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #0b0e14;
+  --foreground: #e5e7eb;
+
+  --canvas: #0b0e14;
+  --panel: #0f1520;
+  --panel-2: #131b28;
+  --line: #1e293b;
+  --line-soft: #16202e;
+
+  --ok: #10b981;
+  --warn: #f59e0b;
+  --err: #ef4444;
+  --info: #38bdf8;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-canvas: var(--canvas);
+  --color-panel: var(--panel);
+  --color-panel-2: var(--panel-2);
+  --color-line: var(--line);
+  --color-line-soft: var(--line-soft);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-err: var(--err);
+  --color-info: var(--info);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html,
+body {
+  height: 100%;
 }
 
 body {
-  background: var(--background);
+  background: var(--canvas);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* faint blueprint grid backdrop */
+.tz-grid {
+  background-image:
+    linear-gradient(to right, rgba(30, 41, 59, 0.35) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(30, 41, 59, 0.35) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* radial spotlight glow */
+.tz-glow {
+  background: radial-gradient(
+    600px circle at 50% 0%,
+    rgba(16, 185, 129, 0.1),
+    transparent 60%
+  );
+}
+
+/* thin custom scrollbars for the panels */
+.tz-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #24324a transparent;
+}
+.tz-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.tz-scroll::-webkit-scrollbar-thumb {
+  background: #24324a;
+  border-radius: 9999px;
+}
+.tz-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@keyframes tz-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5);
+  }
+  50% {
+    opacity: 0.6;
+    box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
+  }
+}
+.tz-live-dot {
+  animation: tz-pulse 1.8s ease-in-out infinite;
 }
