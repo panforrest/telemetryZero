@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { Span, SpanKind, Trace } from "@/lib/types";
 import { fmtMs, fmtTokens, fmtUsd, relativeTime } from "@/lib/format";
@@ -62,6 +62,8 @@ export function ExplorerClient({ traces: initialTraces }: { traces: Trace[] }) {
   const [task, setTask] = useState(DEFAULT_TASK);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [playheadMs, setPlayheadMs] = useState<number | null>(null);
+  const [playing, setPlaying] = useState(false);
 
   const trace = useMemo(
     () => traces.find((t) => t.id === selectedTraceId) ?? traces[0],
@@ -75,7 +77,45 @@ export function ExplorerClient({ traces: initialTraces }: { traces: Trace[] }) {
   function selectTrace(id: string) {
     setSelectedTraceId(id);
     setSelectedSpanId(null);
+    setPlayheadMs(null);
+    setPlaying(false);
   }
+
+  function startReplay() {
+    setSelectedSpanId(null);
+    setPlayheadMs(0);
+    setPlaying(true);
+  }
+
+  // advance the playhead ~5s per full trace while playing
+  useEffect(() => {
+    if (!playing) return;
+    const total = trace.totalMs || 1;
+    const inc = total / 100;
+    const iv = setInterval(() => {
+      setPlayheadMs((prev) => {
+        const cur = (prev ?? 0) + inc;
+        if (cur >= total) {
+          setPlaying(false);
+          return total;
+        }
+        return cur;
+      });
+    }, 50);
+    return () => clearInterval(iv);
+  }, [playing, trace.totalMs]);
+
+  // auto-select the span currently under the playhead
+  useEffect(() => {
+    if (playheadMs == null) return;
+    const leaves = trace.spans.filter((s) => s.kind !== "agent");
+    const inProg = leaves.find(
+      (s) => s.startMs <= playheadMs && playheadMs < s.startMs + s.durationMs,
+    );
+    const reached = leaves.filter((s) => s.startMs <= playheadMs);
+    const pick = inProg ?? reached[reached.length - 1];
+    if (pick) setSelectedSpanId(pick.id);
+  }, [playheadMs, trace]);
 
   async function runLive() {
     if (!task.trim() || running) return;
@@ -247,8 +287,63 @@ export function ExplorerClient({ traces: initialTraces }: { traces: Trace[] }) {
 
         {/* CENTER: timeline */}
         <main className="tz-grid flex flex-col overflow-hidden bg-canvas">
-          <PanelLabel>tool-call timeline · waterfall</PanelLabel>
-          <div className="tz-scroll flex-1 overflow-y-auto p-3">
+          <div className="flex items-center justify-between border-b border-line px-3 py-1.5">
+            <span className="font-mono text-[11px] uppercase tracking-widest text-zinc-500">
+              tool-call timeline · waterfall
+            </span>
+            <div className="flex items-center gap-2">
+              {playheadMs == null ? (
+                <button
+                  onClick={startReplay}
+                  className="flex h-7 items-center gap-1.5 rounded-md border border-ok/40 bg-ok/10 px-3 font-mono text-[11px] text-ok transition-colors hover:bg-ok/20"
+                >
+                  ▶ replay
+                </button>
+              ) : (
+                <>
+                  <button
+                    onClick={() => setPlaying((p) => !p)}
+                    title={playing ? "pause" : "play"}
+                    className="flex h-7 w-7 items-center justify-center rounded-md border border-line bg-panel-2 font-mono text-[11px] text-zinc-200 hover:border-zinc-600"
+                  >
+                    {playing ? "❚❚" : "▶"}
+                  </button>
+                  <button
+                    onClick={startReplay}
+                    title="restart"
+                    className="flex h-7 w-7 items-center justify-center rounded-md border border-line bg-panel-2 font-mono text-[11px] text-zinc-200 hover:border-zinc-600"
+                  >
+                    ⏮
+                  </button>
+                  <input
+                    type="range"
+                    min={0}
+                    max={trace.totalMs}
+                    value={playheadMs}
+                    onChange={(e) => {
+                      setPlaying(false);
+                      setPlayheadMs(Number(e.target.value));
+                    }}
+                    className="h-1 w-36 accent-emerald-400"
+                  />
+                  <span className="w-[92px] font-mono text-[10px] text-zinc-500">
+                    {fmtMs(playheadMs)} / {fmtMs(trace.totalMs)}
+                  </span>
+                  <button
+                    onClick={() => {
+                      setPlaying(false);
+                      setPlayheadMs(null);
+                    }}
+                    title="exit replay"
+                    className="flex h-7 items-center rounded-md border border-line bg-panel-2 px-2 font-mono text-[11px] text-zinc-400 hover:border-zinc-600"
+                  >
+                    ✕
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+          <div className="tz-scroll relative flex-1 overflow-y-auto p-3">
             {/* time axis */}
             <div className="mb-2 flex pl-[184px]">
               <div className="relative h-4 flex-1 border-l border-line-soft">
@@ -261,6 +356,17 @@ export function ExplorerClient({ traces: initialTraces }: { traces: Trace[] }) {
                     {fmtMs(trace.totalMs * f)}
                   </span>
                 ))}
+                {playheadMs != null && (
+                  <div
+                    className="pointer-events-none absolute top-0 z-20 w-px bg-emerald-400"
+                    style={{
+                      left: `${(playheadMs / trace.totalMs) * 100}%`,
+                      height: 1600,
+                    }}
+                  >
+                    <div className="absolute -left-[3px] -top-[2px] h-0 w-0 border-x-[4px] border-t-[6px] border-x-transparent border-t-emerald-400" />
+                  </div>
+                )}
               </div>
             </div>
 
@@ -270,6 +376,12 @@ export function ExplorerClient({ traces: initialTraces }: { traces: Trace[] }) {
                 const widthPct = Math.max((span.durationMs / trace.totalMs) * 100, 1.5);
                 const isAgent = span.kind === "agent";
                 const selected = selectedSpanId === span.id;
+                const reached =
+                  playheadMs == null || span.startMs <= playheadMs;
+                const inProgress =
+                  playheadMs != null &&
+                  span.startMs <= playheadMs &&
+                  playheadMs < span.startMs + span.durationMs;
                 return (
                   <button
                     key={span.id}
@@ -299,13 +411,16 @@ export function ExplorerClient({ traces: initialTraces }: { traces: Trace[] }) {
                     <div className="relative h-5 flex-1">
                       <div
                         className="absolute top-1/2 h-3 -translate-y-1/2 rounded-sm transition-all group-hover:brightness-125"
-                        style={{
-                          left: `${leftPct}%`,
-                          width: `${widthPct}%`,
-                          backgroundColor: barColor(span),
-                          opacity: isAgent ? 0.35 : 0.95,
-                          border: span.status === "error" ? "1px solid #fca5a5" : "none",
-                        }}
+                      style={{
+                        left: `${leftPct}%`,
+                        width: `${widthPct}%`,
+                        backgroundColor: barColor(span),
+                        opacity: !reached ? 0.12 : isAgent ? 0.35 : 0.95,
+                        boxShadow: inProgress
+                          ? `0 0 10px ${barColor(span)}`
+                          : "none",
+                        border: span.status === "error" ? "1px solid #fca5a5" : "none",
+                      }}
                       />
                       <span
                         className="absolute top-1/2 -translate-y-1/2 whitespace-nowrap pl-1 font-mono text-[9px] text-zinc-500"
