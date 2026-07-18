@@ -52,9 +52,16 @@ function PanelLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function ExplorerClient({ traces }: { traces: Trace[] }) {
-  const [selectedTraceId, setSelectedTraceId] = useState(traces[0]?.id);
+const DEFAULT_TASK =
+  "Find the 3 most-funded AI-agent observability startups in 2026 and summarize how each differentiates.";
+
+export function ExplorerClient({ traces: initialTraces }: { traces: Trace[] }) {
+  const [traces, setTraces] = useState<Trace[]>(initialTraces);
+  const [selectedTraceId, setSelectedTraceId] = useState(initialTraces[0]?.id);
   const [selectedSpanId, setSelectedSpanId] = useState<string | null>(null);
+  const [task, setTask] = useState(DEFAULT_TASK);
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const trace = useMemo(
     () => traces.find((t) => t.id === selectedTraceId) ?? traces[0],
@@ -68,6 +75,28 @@ export function ExplorerClient({ traces }: { traces: Trace[] }) {
   function selectTrace(id: string) {
     setSelectedTraceId(id);
     setSelectedSpanId(null);
+  }
+
+  async function runLive() {
+    if (!task.trim() || running) return;
+    setRunning(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ task }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Run failed");
+      setTraces((prev) => [data.trace as Trace, ...prev]);
+      setSelectedTraceId(data.trace.id);
+      setSelectedSpanId(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Run failed");
+    } finally {
+      setRunning(false);
+    }
   }
 
   const topLevel = trace.spans.filter((s) => s.parentId === null);
@@ -93,17 +122,62 @@ export function ExplorerClient({ traces }: { traces: Trace[] }) {
       </header>
 
       {/* toolbar */}
-      <div className="flex items-center justify-between border-b border-line bg-panel px-4 py-2.5">
-        <div className="flex items-center gap-3">
-          <span className="font-mono text-xs text-zinc-500">run</span>
-          <span className="font-mono text-sm text-zinc-200">{trace.title}</span>
-          <StatusPill status={trace.status} />
+      <div className="flex flex-col border-b border-line bg-panel">
+        <div className="flex items-center justify-between gap-3 px-4 py-2.5">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="font-mono text-xs text-zinc-500">run</span>
+            <span className="truncate font-mono text-sm text-zinc-200">
+              {trace.title}
+            </span>
+            <StatusPill status={trace.status} />
+          </div>
+
+          <div className="flex max-w-xl flex-1 items-center gap-2">
+            <input
+              value={task}
+              onChange={(e) => setTask(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && runLive()}
+              disabled={running}
+              placeholder="Give the agent swarm a task…"
+              className="h-8 w-full rounded-md border border-line bg-canvas px-3 font-mono text-xs text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-ok/50 disabled:opacity-60"
+            />
+            <button
+              onClick={runLive}
+              disabled={running}
+              className="flex h-8 shrink-0 items-center gap-2 rounded-md bg-ok px-3 font-mono text-xs font-medium text-[#03130d] transition-transform hover:scale-[1.03] disabled:opacity-60 disabled:hover:scale-100"
+            >
+              {running ? (
+                <>
+                  <span className="h-3 w-3 animate-spin rounded-full border-2 border-[#03130d] border-t-transparent" />
+                  running
+                </>
+              ) : (
+                <>
+                  <span className="tz-live-dot h-1.5 w-1.5 rounded-full bg-[#03130d]" />
+                  run agent
+                </>
+              )}
+            </button>
+          </div>
+
+          <div className="hidden items-center gap-4 font-mono text-xs text-zinc-500 lg:flex">
+            <span>⏱ {fmtMs(trace.totalMs)}</span>
+            <span>◇ {fmtTokens(trace.totalTokens)} tok</span>
+            <span>$ {fmtUsd(trace.totalCostUsd)}</span>
+          </div>
         </div>
-        <div className="flex items-center gap-4 font-mono text-xs text-zinc-500">
-          <span>⏱ {fmtMs(trace.totalMs)}</span>
-          <span>◇ {fmtTokens(trace.totalTokens)} tok</span>
-          <span>$ {fmtUsd(trace.totalCostUsd)}</span>
-        </div>
+
+        {error && (
+          <div className="border-t border-err/30 bg-err/10 px-4 py-1.5 font-mono text-[11px] text-red-300">
+            ⚠ {error}
+          </div>
+        )}
+        {running && (
+          <div className="border-t border-ok/20 bg-ok/5 px-4 py-1.5 font-mono text-[11px] text-ok">
+            <span className="tz-live-dot mr-2 inline-block h-1.5 w-1.5 rounded-full bg-ok" />
+            swarm running · Researcher → Analyst → Writer → Judge · hitting Tavily + OpenAI…
+          </div>
+        )}
       </div>
 
       {/* body */}
